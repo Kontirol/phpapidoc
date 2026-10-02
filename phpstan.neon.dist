@@ -1,0 +1,11 @@
+parameters:
+    level: 6
+    paths:
+        - src
+    excludePaths:
+        analyse:
+            - tests/Fixtures
+    treatPhpDocTypesAsCertain: false
+    tmpDir: build/phpstan
+    ignoreErrors:
+        - identifier: missingType.iterableValue

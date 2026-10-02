@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         cacheResultFile=".phpunit.cache/test-results"
+         executionOrder="depends,defects"
+         failOnRisky="true"
+         failOnWarning="true"
+         beStrictAboutOutputDuringTests="true"
+         convertDeprecationsToExceptions="false">
+    <testsuites>
+        <testsuite name="ApiDoc">
+            <directory suffix="Test.php">tests</directory>
+        </testsuite>
+    </testsuites>
+    <coverage>
+        <include>
+            <directory suffix=".php">src</directory>
+        </include>
+        <report>
+            <clover outputFile="build/coverage/clover.xml"/>
+            <html outputDirectory="build/coverage/html"/>
+        </report>
+    </coverage>
+    <php>
+        <ini name="error_reporting" value="-1"/>
+        <ini name="display_errors" value="On"/>
+    </php>
+</phpunit>

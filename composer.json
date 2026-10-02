@@ -1,0 +1,63 @@
+{
+    "name": "kontirol/apidoc",
+    "description": "Generate OpenAPI 3.0 (Swagger) documentation from PHP controller annotations, with optional framework route introspection.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": [
+        "api",
+        "apidoc",
+        "openapi",
+        "swagger",
+        "documentation",
+        "phpdoc",
+        "annotation",
+        "thinkphp"
+    ],
+    "authors": [
+        {
+            "name": "kontirol",
+            "email": "whoami324@qq.com"
+        }
+    ],
+    "require": {
+        "php": "^7.4 || ^8.0",
+        "ext-json": "*",
+        "symfony/yaml": "^5.4 || ^6.0 || ^7.0"
+    },
+    "require-dev": {
+        "phpstan/phpstan": "^2.1",
+        "phpunit/phpunit": "^9.6"
+    },
+    "autoload": {
+        "psr-4": {
+            "Kontirol\\ApiDoc\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Kontirol\\ApiDoc\\Tests\\": "tests/"
+        }
+    },
+    "bin": [
+        "bin/apidoc"
+    ],
+    "scripts": {
+        "test": "phpunit",
+        "analyse": "phpstan analyse --memory-limit=1G",
+        "check": [
+            "@test",
+            "@analyse"
+        ]
+    },
+    "extra": {
+        "branch-alias": {
+            "dev-main": "1.x-dev"
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "optimize-autoloader": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

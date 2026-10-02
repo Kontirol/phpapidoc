@@ -1,0 +1,28 @@
+# Let git normalise line endings for every text file, so that a Windows
+# checkout produces the same bytes as a Linux one (important for bin/apidoc
+# whose shebang must not end with a stray \r).
+* text=auto eol=lf
+
+*.php  text
+*.md   text
+*.json text
+*.yml  text
+*.yaml text
+
+bin/apidoc text eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
+
+# Keep the installed package small: these are only useful when working on the
+# library itself.
+/.github       export-ignore
+/tests         export-ignore
+/examples      export-ignore
+/docs          export-ignore
+phpstan.neon.dist export-ignore
+phpunit.xml.dist  export-ignore
+.gitattributes export-ignore
+.gitignore     export-ignore
+CHANGELOG.md   export-ignore
