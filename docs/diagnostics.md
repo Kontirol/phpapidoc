@@ -52,6 +52,7 @@ apidoc 不会因为一个小问题就崩掉。它把遇到的所有问题收集�
 
 | 码 | 级别 | 触发条件 | 怎么修 |
 |---|---|---|---|
+| `method.guessed` | notice | 接口没写 `@method`，当前值是从方法名猜的 | 猜错了就补一行 `@method POST` 之类；不想看到这个行为请显式写上 `@method` |
 | `param.malformed` | warning | `@param` 后面的内容不够两段 | 写成 `@param <类型> <名字> <说明>` |
 | `param.missing_name` | warning | `@param` 的类型写了，但名字是空的 | 补上名字 |
 | `param.undocumented` | notice | 方法签名里有这个参数，但注释里没写 | 不一定是问题：可能是本意。想补就加 `@param`，想彻底关掉反射就用 `--no-reflection` |

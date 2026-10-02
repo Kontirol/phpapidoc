@@ -222,7 +222,7 @@ final class ApplicationTest extends TestCase
 
         $document = (new Application($config))->buildDocument();
 
-        self::assertSame(6, count($document->documentedEndpoints()));
+        self::assertSame(8, count($document->documentedEndpoints()));
     }
 
     public function testTheHttpMethodOfUndocumentedMethodsIsGuessedFromTheName(): void
@@ -243,6 +243,22 @@ final class ApplicationTest extends TestCase
         self::assertSame('DELETE', $remove->httpMethod);
         self::assertSame('GET', $index->httpMethod);
         self::assertSame('save', $save->summary);
+    }
+
+    public function testCamelCaseActionNamesAreSplitBeforeGuessingTheMethod(): void
+    {
+        $config = $this->inferConfig()->with(['include_undocumented' => true]);
+
+        $document = (new Application($config))->buildDocument();
+
+        $send = $document->getEndpoint(self::INFER_CONTROLLER . '::sendCode');
+        $cancel = $document->getEndpoint(self::INFER_CONTROLLER . '::cancelOrder');
+
+        self::assertNotNull($send);
+        self::assertNotNull($cancel);
+
+        self::assertSame('POST', $send->httpMethod);
+        self::assertSame('DELETE', $cancel->httpMethod);
     }
 
     public function testUndocumentedMethodsAreReported(): void

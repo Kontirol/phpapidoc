@@ -4,6 +4,20 @@
 
 ## [未发布]
 
+## [0.1.1] - 2026-10-02
+
+第一个补丁版本，来自一次真实项目的试用（ThinkPHP 8 挂号系统，20 个接口）。
+
+### 修复
+
+- **驼峰方法名导致 HTTP 方法全部猜错**：`sendCode` / `cancelOrder` 之前会先转小写再分词，被拼成一个词（`sendcode`），关键词全部失配、一律猜成 `GET`。现在先按驼峰边界拆分再比对
+- **有 `@param` 却没有 `@method` 的接口不再无条件当作 `GET`**：真实项目里大量方法只写了标准 PHPDoc（apidoc 的 `@param` 和 PHPDoc 的 `@param` 同名，因此这些方法会被识别成接口），但没有 apidoc 的 `@method`。现在改为按方法名猜测，并给出 `method.guessed` notice
+- HTTP 方法关键词表扩充：`lock`、`unlock`、`close`、`notify`、`callback`、`payment`
+
+### 新增
+
+- 诊断码 `method.guessed`：接口没写 `@method`，当前值是从方法名猜的
+
 ## [0.1.0] - 2026-10-02
 
 首个版本。

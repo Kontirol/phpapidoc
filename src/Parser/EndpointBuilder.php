@@ -100,10 +100,25 @@ final class EndpointBuilder
             $endpoint->addResponse(new Response('200', '成功'));
         }
 
-        // OpenAPI needs a verb for every operation, GET is the sane default when
-        // the docblock did not say anything.
+        // Plenty of real world docblocks are plain PHPDoc: they carry @param but
+        // never say @method. Guessing from the action name beats silently
+        // claiming every such endpoint is a GET.
         if ($endpoint->httpMethod === null || $endpoint->httpMethod === '') {
-            $endpoint->httpMethod = 'GET';
+            $guessed = self::guessHttpMethod($endpoint->action);
+
+            $endpoint->httpMethod = $guessed;
+
+            $this->diagnostics[] = Diagnostic::notice(
+                'method.guessed',
+                sprintf(
+                    '%s::%s() has no @method, %s was guessed from its name.',
+                    $endpoint->shortController(),
+                    $endpoint->action,
+                    $guessed
+                ),
+                $endpoint->file,
+                $endpoint->line
+            );
         }
 
         return $endpoint;
@@ -151,7 +166,8 @@ final class EndpointBuilder
     private const WRITE_WORDS = [
         'create', 'store', 'save', 'add', 'insert', 'submit', 'send', 'post',
         'report', 'upload', 'login', 'logout', 'refresh', 'register', 'bind',
-        'unbind', 'publish', 'approve', 'reject', 'pay', 'start', 'stop',
+        'unbind', 'publish', 'approve', 'reject', 'pay', 'payment', 'start',
+        'stop', 'lock', 'unlock', 'close', 'notify', 'callback',
     ];
 
     /**
@@ -166,7 +182,11 @@ final class EndpointBuilder
 
     private static function guessHttpMethod(string $action): string
     {
-        $words = preg_split('#[^a-zA-Z0-9]+#', strtolower($action));
+        // "sendCode" must split like "send_code" does; lower casing first would
+        // glue the words together and lose the hint entirely.
+        $snake = (string) preg_replace('#(?<!^)[A-Z]#', '_$0', $action);
+
+        $words = preg_split('#[^a-zA-Z0-9]+#', strtolower($snake));
 
         if ($words === false || $words === []) {
             return 'GET';

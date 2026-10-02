@@ -48,6 +48,16 @@ final class ProductController
         return [];
     }
 
+    public function sendCode(): array
+    {
+        return [];
+    }
+
+    public function cancelOrder(): array
+    {
+        return [];
+    }
+
     public function remove(): array
     {
         return [];

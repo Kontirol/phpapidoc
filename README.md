@@ -199,7 +199,7 @@ vendor/bin/apidoc generate --all
 `--all` 会把**没有 apidoc 标签的方法也全部纳入**：
 
 - URL 用上面的规则推导
-- HTTP 方法从方法名猜：`save_*` / `create_*` / `send_*` → `POST`，`remove_*` / `delete_*` / `clear_*` → `DELETE`，`update_*` / `edit_*` → `PUT`，其余 `GET`
+- HTTP 方法从方法名猜（`saveCode` 这种驼峰写法也认）：`save_*` / `create_*` / `send_*` / `notify` → `POST`，`remove_*` / `delete_*` / `clear_*` / `cancel_*` → `DELETE`，`update_*` / `edit_*` → `PUT`，其余 `GET`
 - `summary` 用方法名
 - 参数从方法签名反射出来
 - 每一条都带 `endpoint.undocumented` notice，明确标明这是猜的
