@@ -14,7 +14,7 @@ use Throwable;
  */
 final class Console
 {
-    public const VERSION = '0.1.1';
+    public const VERSION = '0.1.2';
 
     public const SUCCESS = 0;
     public const FAILURE = 1;

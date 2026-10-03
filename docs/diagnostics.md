@@ -47,6 +47,7 @@ apidoc 不会因为一个小问题就崩掉。它把遇到的所有问题收集�
 | `endpoint.duplicate_route` | error | 两个接口占用了同一个「方法 + 路径」 | 改掉重复的 `@route`；OpenAPI 不允许同一个 `GET /x` 出现两次 |
 | `endpoint.no_route` | warning | 有注释但既没有 `@route`，也没有配路由来源 | 补 `@route`，或配置 `route.source` |
 | `endpoint.no_summary` | notice | 既没有 `@name` 也没有 `@desc` | 补一个，否则 Swagger UI 里这行是空白的 |
+| `endpoint.undocumented` | notice | 方法没有 apidoc 标签，因为开了 `include_undocumented` / `--all` 才被收进来 | 想让它变准就给方法补注释；不想看到这个提示就把 `--all` 去掉 |
 
 ### 参数
 
@@ -78,6 +79,23 @@ apidoc 不会因为一个小问题就崩掉。它把遇到的所有问题收集�
 > `route.*` 只有在你配置了 `route.source`（框架路由表）之后才可能出现。默认的 `annotation` 模式下不会产生这些诊断。
 
 匹配用的是「控制器 + 方法」而不是 URL，因为框架给出的控制器名是相对于当前应用的（`Order/detail`），而扫描出的是完整类名（`App\Api\Controller\Order`）。apidoc 会同时用完整名和短名去匹配；短名撞车时宁愿报 `route.ambiguous` 也不猜。
+
+### URL 推导
+
+| 码 | 级别 | 触发条件 | 怎么修 |
+|---|---|---|---|
+| `route.inferred` | notice | 方法没写 `@route`，apidoc 按命名空间约定推出了一条 | 消息里带着推导结果，核对一下；想完全掌控就手写 `@route`。不想看到推导就加 `--no-infer` 或配 `'route' => ['infer' => false]` |
+
+推导出来的段名取决于应用自身的约定：
+
+| 配置项 | 出厂值 | 效果 |
+|---|---|---|
+| `route.controller_suffix` | `false` | 不剥后缀，`OrderController` → `ordercontroller` |
+| `app.url_convert` | `true` | 转小写，且**不**拆驼峰，`orderDetail` → `orderdetail` |
+
+`route.source = thinkphp` 时这两个值会向应用询问；问不到（或没配）则按上表的 ThinkPHP 出厂值走。两种情况都只是让推导结果更贴近真实，不会报错 —— 唯一的外部表现是 notice 消息里那条路径长什么样。
+
+这条**不受 `route.source` 影响**：只要开启了推导（默认开），任何一条没写 `@route`、且路由表里也没有对应条目的接口都会产生它。
 
 ---
 

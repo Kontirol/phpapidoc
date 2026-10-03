@@ -24,6 +24,33 @@ final class Config
     public const FORMAT_YAML = 'yaml';
 
     /**
+     * Ask the loaded framework route source which convention applies.
+     */
+    public const URL_CONVENTION_AUTO = 'auto';
+
+    /**
+     * Keep only the case of a segment: "orderDetail" -> "orderdetail".
+     *
+     * This is what ThinkPHP does and therefore the default.
+     */
+    public const CASE_LOWER = 'lower';
+
+    /**
+     * Underscore separated: "orderDetail" -> "order_detail".
+     */
+    public const CASE_SNAKE = 'snake';
+
+    /**
+     * Hyphen separated: "orderDetail" -> "order-detail".
+     */
+    public const CASE_KEBAB = 'kebab';
+
+    /**
+     * Left as written: "orderDetail" -> "orderDetail".
+     */
+    public const CASE_KEEP = 'keep';
+
+    /**
      * @var array<string, mixed>
      */
     private const DEFAULTS = [
@@ -47,6 +74,15 @@ final class Config
                 'bootstrap' => 'vendor/autoload.php',
                 'application' => null,
             ],
+        ],
+        // How a controller class name is turned into a URL segment.
+        'url' => [
+            // true  : app\api\controller\OrderController -> /api/order
+            // false : app\api\controller\OrderController -> /api/ordercontroller
+            // auto  : ask the framework (ThinkPHP defaults to false)
+            'controller_suffix' => self::URL_CONVENTION_AUTO,
+            // auto | lower | snake | kebab | keep
+            'case' => self::URL_CONVENTION_AUTO,
         ],
         'security' => [
             'schemes' => [],
@@ -275,6 +311,77 @@ final class Config
     public function thinkPhpApplication(): ?string
     {
         return self::resolveOptionalPath(Arr::get($this->data, 'route.thinkphp.application'));
+    }
+
+    /**
+     * Whether "Controller" is stripped from the controller URL segment.
+     *
+     * Returns the literal string "auto" when the framework route source should
+     * be asked instead, which is the default.
+     *
+     * ThinkPHP's route.controller_suffix defaults to false, meaning the suffix
+     * stays: "app\api\controller\OrderController" answers at
+     * "/api/ordercontroller" and the document must say so.
+     *
+     * @return bool|string
+     */
+    public function controllerSuffix()
+    {
+        $value = Arr::get($this->data, 'url.controller_suffix', self::URL_CONVENTION_AUTO);
+
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_string($value)) {
+            $normalised = strtolower(trim($value));
+
+            if ($normalised === '' || $normalised === self::URL_CONVENTION_AUTO) {
+                return self::URL_CONVENTION_AUTO;
+            }
+
+            if ($normalised === 'true') {
+                return true;
+            }
+
+            if ($normalised === 'false') {
+                return false;
+            }
+        }
+
+        throw ConfigException::invalid(sprintf(
+            '"url.controller_suffix" must be "auto", true or false. Got: %s.',
+            is_scalar($value) ? (string) $value : gettype($value)
+        ));
+    }
+
+    /**
+     * The casing to spell URL segments with.
+     *
+     * "auto" means "ask the framework, and fall back to lower" and is the
+     * default.
+     */
+    public function urlCase(): string
+    {
+        $value = Arr::get($this->data, 'url.case', self::URL_CONVENTION_AUTO);
+
+        $allowed = [
+            self::URL_CONVENTION_AUTO,
+            self::CASE_LOWER,
+            self::CASE_SNAKE,
+            self::CASE_KEBAB,
+            self::CASE_KEEP,
+        ];
+
+        if (is_string($value) && in_array(strtolower(trim($value)), $allowed, true)) {
+            return strtolower(trim($value));
+        }
+
+        throw ConfigException::invalid(sprintf(
+            '"url.case" must be one of: %s. Got: %s.',
+            implode(', ', $allowed),
+            is_scalar($value) ? (string) $value : gettype($value)
+        ));
     }
 
     /**

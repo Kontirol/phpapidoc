@@ -246,6 +246,37 @@ final class ThinkPhpRouteSourceTest extends TestCase
     }
 
     /**
+     * Nothing can be reported about a framework that was never bootstrapped, and
+     * saying so must not throw.
+     */
+    public function testUrlConventionsAreUnknownWithoutABootstrappedFramework(): void
+    {
+        $source = $this->source([]);
+
+        self::assertSame(
+            ['controllerSuffix' => null, 'urlCase' => null],
+            $source->urlConventions()
+        );
+    }
+
+    public function testTheRuleListIsOnlyFetchedOnce(): void
+    {
+        $calls = 0;
+
+        $source = new ThinkPhpRouteSource(null, static function () use (&$calls): array {
+            $calls++;
+
+            return [];
+        });
+
+        $source->routes();
+        $source->routes();
+        $source->urlConventions();
+
+        self::assertSame(1, $calls);
+    }
+
+    /**
      * @param mixed $rules
      */
     private function source($rules): ThinkPhpRouteSource

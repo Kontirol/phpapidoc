@@ -23,6 +23,8 @@ app/api/controller/
 
 （或者在你的 `config/route.php` 里把 `controller_suffix` 打开，让文件名带上后缀。）
 
+注意 `controller_suffix` 不只影响**文件名**，还影响**URL**，见下一节。
+
 ---
 
 ## 2. URL 从哪来
@@ -42,10 +44,28 @@ app/api/controller/Translate.php::text()   →   /api/translate/text
 好在这类项目的 URL 规则极其固定：
 
 ```
-/{应用名}/{控制器名}/{操作名}
+/{应用名}/{控制器段}/{操作段}
 ```
 
-所以 apidoc 会**按这个规则自动推导**，`@route` 可以直接省掉：
+两个「段」的拼法取决于应用配置，apidoc 会自己去读：
+
+| 配置项 | 出厂值 | 含义 |
+|---|---|---|
+| `route.controller_suffix` | `false` | 为 `false` 时，`OrderController` 的段是 **`ordercontroller`**（后缀是类名的一部分）；为 `true` 时是 **`order`**（框架自己补后缀去找类） |
+| `app.url_convert` | `true` | URL 转小写。ThinkPHP **不做驼峰转下划线**，所以 `orderDetail()` 的段是 `orderdetail`，不是 `order_detail` |
+
+也就是说：
+
+```
+app/api/controller/OrderController.php::myorders()
+    namespace app\api\controller   →  /api
+    类名 OrderController            →  ordercontroller     （controller_suffix = false）
+    方法 myorders                   →  myorders
+                    ↓
+            /api/ordercontroller/myorders
+```
+
+所以 apidoc 会**按这两条规则自动推导**，`@route` 可以直接省掉：
 
 ```php
 /**
@@ -58,6 +78,15 @@ public function text(): array
 推出来是 `/api/translate/text`，并附带一条 `route.inferred` notice，方便你知道这个值是猜的。
 
 想精确控制就手写 `@route`（写了永远不会被推导覆盖）；完全不想要推导就加 `--no-infer`。
+
+**项目不走 ThinkPHP 的约定时**（自己写了路由、URL 用 kebab-case 之类），手动指定：
+
+```php
+'url' => [
+    'controller_suffix' => true,   // auto（默认，问框架）| true | false
+    'case' => 'kebab',             // auto（默认）| lower | snake | kebab | keep
+],
+```
 
 ### 注册式路由（写了 `route/*.php` 的项目）
 
@@ -89,6 +118,8 @@ apidoc 会**在进程内引导你的应用**（`new think\App()` + `initialize()
 | 路由表里有，但没有任何注释声明 | notice `route.undocumented` |
 | `@route` 没写，但路由表里有 | 自动填上 |
 
+同一趟引导顺带会把上面那两项 URL 约定读出来，所以读路由表和推导 URL 用的是**同一次启动**，不会重复引导。
+
 ### 匹配用的是「控制器 + 方法」，不是 URL
 
 因为框架给出的控制器名是**相对于当前应用**的：
@@ -109,11 +140,17 @@ user::detail                      ← 短名
 
 ### 引导失败会怎样
 
+分两种情况：
+
+**读路由表失败**（`route.source = thinkphp`，或 `auto` 且进程里已经有 `think\App`）：
+
 如果 `bootstrap` 指向的文件不存在、或者应用初始化抛异常（比如数据库连不上），apidoc 会直接报错退出（退出码 `1`），不会静默降级。消息里会带上具体路径：
 
 ```
 error: Unable to bootstrap the framework to read its route table (D:\app\vendor\autoload.php): ...
 ```
+
+**读 URL 约定失败**：不会报错，只是退回配置里的值 —— 未配置时按 ThinkPHP 出厂值（`controller_suffix = false`、`lower`）。因为约定读不到不影响文档生成，只影响推导出来的路径长什么样，没必要为此中断。
 
 `route.source = auto`（默认值）则是「能用就用」：当前进程里能加载到 `think\App` 才去读路由表，否则安静地只用 `@route`。
 
@@ -161,6 +198,18 @@ GET    /user/detail            User::detail
 
 只读，不会写你的项目任何文件。
 
+**想确认推导出来的 URL 对不对**，不用探针 —— 加 `-v` 跑一次就够，每条推导都会打出结果：
+
+```bash
+vendor/bin/apidoc generate -v | grep route.inferred
+```
+
+```
+OrderController::myorders() has no @route, /api/ordercontroller/myorders was derived from its namespace.
+```
+
+拿这个路径去访问一次，能通就说明约定读对了。
+
 ---
 
 ## 4. 多应用的前缀
@@ -170,7 +219,9 @@ GET    /user/detail            User::detail
 | 文件 | URL |
 |---|---|
 | `app/api/controller/Auth.php::login()` | `/api/auth/login` |
+| `app/api/controller/OrderController.php::myorders()` | `/api/ordercontroller/myorders` |
 | `app/backend/controller/User.php::list()` | `/backend/user/list` |
+| `app/backend/controller/UserController.php::list()` | `/backend/usercontroller/list` |
 
 写 `@route` 时带上这个前缀，或者在 `controllers[].prefix` 里把这个前缀配给整个目录。
 
@@ -185,6 +236,7 @@ GET    /user/detail            User::detail
 
 | 码 | 级别 | 含义 |
 |---|---|---|
+| `route.inferred` | notice | `@route` 没写，这条路径是从命名空间推的（消息里带推导结果） |
 | `route.undocumented` | notice | 路由表里有这条路由，但没有接口注释声明它 |
 | `route.mismatch` | warning | `@route` 和路由表不一致（以框架为准） |
 | `route.method_mismatch` | warning | `@method` 和路由表不一致（以框架为准） |

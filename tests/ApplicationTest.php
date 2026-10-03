@@ -7,9 +7,12 @@ namespace Kontirol\ApiDoc\Tests;
 use Kontirol\ApiDoc\Application;
 use Kontirol\ApiDoc\Config\Config;
 use Kontirol\ApiDoc\Exception\OutputException;
+use Kontirol\ApiDoc\Route\FrameworkConventionsInterface;
 use Kontirol\ApiDoc\Route\RouteDefinition;
 use Kontirol\ApiDoc\Route\RouteSourceInterface;
+use Kontirol\ApiDoc\Route\UrlInferrer;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 final class ApplicationTest extends TestCase
 {
@@ -163,15 +166,117 @@ final class ApplicationTest extends TestCase
         self::assertFileExists($output);
     }
 
-    public function testMissingRoutesAreDerivedFromTheConfiguredPrefix(): void
+    /**
+     * ThinkPHP's route.controller_suffix defaults to false, so the class
+     * ProductController stays whole in the URL.
+     */
+    public function testMissingRoutesKeepTheControllerSuffixByDefault(): void
     {
         $document = (new Application($this->inferConfig()))->buildDocument();
 
         $index = $document->getEndpoint(self::INFER_CONTROLLER . '::index');
 
         self::assertNotNull($index);
-        self::assertSame('/api/product/index', $index->route);
+        self::assertSame('/api/productcontroller/index', $index->route);
         self::assertTrue($index->extra['routeInferred'] ?? false);
+    }
+
+    public function testTheControllerSuffixConventionCanBeForced(): void
+    {
+        $config = $this->inferConfig()->with(['url' => ['controller_suffix' => true]]);
+
+        $document = (new Application($config))->buildDocument();
+
+        $index = $document->getEndpoint(self::INFER_CONTROLLER . '::index');
+
+        self::assertNotNull($index);
+        self::assertSame('/api/product/index', $index->route);
+    }
+
+    public function testTheSegmentCaseConventionCanBeForced(): void
+    {
+        $config = $this->inferConfig()->with([
+            'include_undocumented' => true,
+            'url' => ['case' => 'snake'],
+        ]);
+
+        $document = (new Application($config))->buildDocument();
+
+        $send = $document->getEndpoint(self::INFER_CONTROLLER . '::sendCode');
+
+        self::assertNotNull($send);
+        self::assertSame('/api/product_controller/send_code', $send->route);
+    }
+
+    public function testTheControllerSuffixCanBeDetectedFromARouteSource(): void
+    {
+        $document = (new Application($this->inferConfig(), [$this->conventionsSource(true, null)]))
+            ->buildDocument();
+
+        $index = $document->getEndpoint(self::INFER_CONTROLLER . '::index');
+
+        self::assertNotNull($index);
+        self::assertSame('/api/product/index', $index->route);
+    }
+
+    public function testTheDetectedUrlCaseIsApplied(): void
+    {
+        $config = $this->inferConfig()->with(['include_undocumented' => true]);
+
+        $document = (new Application(
+            $config,
+            [$this->conventionsSource(false, UrlInferrer::CASE_SNAKE)]
+        ))->buildDocument();
+
+        $send = $document->getEndpoint(self::INFER_CONTROLLER . '::sendCode');
+
+        self::assertNotNull($send);
+        self::assertSame('/api/product_controller/send_code', $send->route);
+    }
+
+    public function testTheConfigurationWinsOverTheDetectedConventions(): void
+    {
+        $config = $this->inferConfig()->with(['url' => ['controller_suffix' => false]]);
+
+        $document = (new Application($config, [$this->conventionsSource(true, null)]))->buildDocument();
+
+        $index = $document->getEndpoint(self::INFER_CONTROLLER . '::index');
+
+        self::assertNotNull($index);
+        self::assertSame('/api/productcontroller/index', $index->route);
+    }
+
+    /**
+     * A framework that refuses to boot must not take the run down with it.
+     */
+    public function testARouteSourceThatCannotAnswerIsIgnored(): void
+    {
+        $source = new class implements RouteSourceInterface, FrameworkConventionsInterface {
+            /**
+             * @return list<RouteDefinition>
+             */
+            public function routes(): array
+            {
+                return [];
+            }
+
+            public function name(): string
+            {
+                return 'broken';
+            }
+
+            public function urlConventions(): array
+            {
+                throw new RuntimeException('the framework could not be bootstrapped');
+            }
+        };
+
+        $document = (new Application($this->inferConfig(), [$source]))->buildDocument();
+
+        $index = $document->getEndpoint(self::INFER_CONTROLLER . '::index');
+
+        self::assertNotNull($index);
+        self::assertSame('/api/productcontroller/index', $index->route);
     }
 
     public function testAWrittenRouteIsNeverOverwritten(): void
@@ -301,6 +406,51 @@ final class ApplicationTest extends TestCase
             'output' => ['json' => $output],
             'info' => ['title' => 'Fixture API', 'version' => '0.1.0'],
         ], __DIR__);
+    }
+
+    /**
+     * A route source that also reports framework URL conventions.
+     */
+    private function conventionsSource(?bool $controllerSuffix, ?string $urlCase): RouteSourceInterface
+    {
+        return new class($controllerSuffix, $urlCase) implements RouteSourceInterface, FrameworkConventionsInterface {
+            /**
+             * @var bool|null
+             */
+            private $controllerSuffix;
+
+            /**
+             * @var string|null
+             */
+            private $urlCase;
+
+            public function __construct(?bool $controllerSuffix, ?string $urlCase)
+            {
+                $this->controllerSuffix = $controllerSuffix;
+                $this->urlCase = $urlCase;
+            }
+
+            /**
+             * @return list<RouteDefinition>
+             */
+            public function routes(): array
+            {
+                return [];
+            }
+
+            public function name(): string
+            {
+                return 'conventions';
+            }
+
+            public function urlConventions(): array
+            {
+                return [
+                    'controllerSuffix' => $this->controllerSuffix,
+                    'urlCase' => $this->urlCase,
+                ];
+            }
+        };
     }
 
     private function tempPath(): string

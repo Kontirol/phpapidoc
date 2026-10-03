@@ -18,11 +18,52 @@ namespace Kontirol\ApiDoc\Route;
  *     app\api\controller   ->  /api      (multi application)
  *     app\controller       ->  (root)    (single application)
  *
+ * Two details of the convention are configurable, because both depend on the
+ * application rather than on the framework version.
+ *
+ * 1. The "Controller" suffix. ThinkPHP's route.controller_suffix defaults to
+ *    false, which means the suffix is part of the URL: the class
+ *    "app\api\controller\OrderController" answers at "/api/ordercontroller".
+ *    With route.controller_suffix = true the same class answers at "/api/order",
+ *    because the framework appends the suffix itself when resolving.
+ *
+ * 2. The casing of a segment. ThinkPHP lowercases the URL and does not split
+ *    camel case, so "orderDetail" stays one word: "orderdetail". Projects that
+ *    write their own routes are free to use other conventions, hence the CASE_*
+ *    alternatives.
+ *
  * A namespace that does not look like ThinkPHP yields null, so other frameworks
  * and plain PHP projects are never given an invented URL.
  */
 final class UrlInferrer
 {
+    /**
+     * Upper and lower case only: "orderDetail" -> "orderdetail".
+     *
+     * This is what ThinkPHP does, and therefore the default.
+     */
+    public const CASE_LOWER = 'lower';
+
+    /**
+     * Underscore separated: "orderDetail" -> "order_detail".
+     */
+    public const CASE_SNAKE = 'snake';
+
+    /**
+     * Hyphen separated: "orderDetail" -> "order-detail".
+     */
+    public const CASE_KEBAB = 'kebab';
+
+    /**
+     * Left as written: "orderDetail" -> "orderDetail".
+     */
+    public const CASE_KEEP = 'keep';
+
+    /**
+     * @var list<string>
+     */
+    private const CASES = [self::CASE_LOWER, self::CASE_SNAKE, self::CASE_KEBAB, self::CASE_KEEP];
+
     /**
      * @var string
      */
@@ -33,10 +74,33 @@ final class UrlInferrer
      */
     private $urlPrefix;
 
-    public function __construct(string $namespacePrefix = '', string $urlPrefix = '')
-    {
+    /**
+     * @var bool
+     */
+    private $controllerSuffix;
+
+    /**
+     * @var string
+     */
+    private $segmentCase;
+
+    /**
+     * @param string $namespacePrefix  The namespace the controllers live in.
+     * @param string $urlPrefix        Overrides the namespace derived prefix.
+     * @param bool   $controllerSuffix Whether "Controller" is stripped from the
+     *                                 URL. False matches ThinkPHP's default.
+     * @param string $segmentCase      One of the CASE_* constants.
+     */
+    public function __construct(
+        string $namespacePrefix = '',
+        string $urlPrefix = '',
+        bool $controllerSuffix = false,
+        string $segmentCase = self::CASE_LOWER
+    ) {
         $this->namespacePrefix = trim($namespacePrefix, '\\');
         $this->urlPrefix = rtrim(trim($urlPrefix), '/');
+        $this->controllerSuffix = $controllerSuffix;
+        $this->segmentCase = self::normaliseCase($segmentCase);
     }
 
     /**
@@ -57,7 +121,7 @@ final class UrlInferrer
         }
 
         if ($action !== '') {
-            $path .= '/' . self::snake($action);
+            $path .= '/' . $this->toSegment($action);
         }
 
         return $prefix . '/' . $path;
@@ -69,6 +133,22 @@ final class UrlInferrer
     public function isUsable(): bool
     {
         return $this->resolvePrefix() !== null;
+    }
+
+    /**
+     * Whether "Controller" is stripped from the controller segment.
+     */
+    public function stripsControllerSuffix(): bool
+    {
+        return $this->controllerSuffix;
+    }
+
+    /**
+     * The casing applied to every segment.
+     */
+    public function segmentCase(): string
+    {
+        return $this->segmentCase;
     }
 
     private function resolvePrefix(): ?string
@@ -94,14 +174,41 @@ final class UrlInferrer
         $segments = [];
 
         foreach (explode('\\', $controller) as $segment) {
-            $segment = self::stripSuffix($segment);
+            if ($this->controllerSuffix) {
+                $segment = self::stripSuffix($segment);
+            }
 
             if ($segment !== '') {
-                $segments[] = self::snake($segment);
+                $segments[] = $this->toSegment($segment);
             }
         }
 
         return implode('/', $segments);
+    }
+
+    private function toSegment(string $name): string
+    {
+        switch ($this->segmentCase) {
+            case self::CASE_SNAKE:
+                return self::snake($name);
+
+            case self::CASE_KEBAB:
+                return str_replace('_', '-', self::snake($name));
+
+            case self::CASE_KEEP:
+                return $name;
+
+            case self::CASE_LOWER:
+            default:
+                return strtolower($name);
+        }
+    }
+
+    private static function normaliseCase(string $case): string
+    {
+        $case = strtolower(trim($case));
+
+        return in_array($case, self::CASES, true) ? $case : self::CASE_LOWER;
     }
 
     private static function stripSuffix(string $segment): string

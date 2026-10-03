@@ -23,18 +23,78 @@ final class UrlInferrerTest extends TestCase
         self::assertSame('/user/list', $inferrer->infer('app\\controller\\User', 'list'));
     }
 
-    public function testStripsTheControllerSuffix(): void
+    /**
+     * ThinkPHP's route.controller_suffix defaults to false, so the suffix is
+     * part of the URL: the class OrderController is reached at /api/ordercontroller.
+     */
+    public function testKeepsTheControllerSuffixByDefault(): void
     {
         $inferrer = new UrlInferrer('app\\api\\controller');
+
+        self::assertSame(
+            '/api/usercontroller/list',
+            $inferrer->infer('app\\api\\controller\\UserController', 'list')
+        );
+    }
+
+    public function testStripsTheControllerSuffixWhenTheApplicationDoes(): void
+    {
+        $inferrer = new UrlInferrer('app\\api\\controller', '', true);
 
         self::assertSame('/api/user/list', $inferrer->infer('app\\api\\controller\\UserController', 'list'));
     }
 
-    public function testConvertsCamelCaseToSnakeCase(): void
+    /**
+     * ThinkPHP lowercases the URL but does not split camel case, so
+     * getUserInfo answers at /getuserinfo rather than /get_user_info.
+     */
+    public function testLowercasesCamelCaseWithoutSplittingIt(): void
     {
         $inferrer = new UrlInferrer('app\\api\\controller');
 
+        self::assertSame('/api/userorder/getlist', $inferrer->infer('app\\api\\controller\\UserOrder', 'getList'));
+    }
+
+    public function testCanSplitCamelCaseIntoSeparateSnakeCaseWords(): void
+    {
+        $inferrer = new UrlInferrer('app\\api\\controller', '', false, UrlInferrer::CASE_SNAKE);
+
         self::assertSame('/api/user_order/get_list', $inferrer->infer('app\\api\\controller\\UserOrder', 'getList'));
+    }
+
+    public function testCanSplitCamelCaseIntoKebabCaseWords(): void
+    {
+        $inferrer = new UrlInferrer('app\\api\\controller', '', false, UrlInferrer::CASE_KEBAB);
+
+        self::assertSame('/api/user-order/get-list', $inferrer->infer('app\\api\\controller\\UserOrder', 'getList'));
+    }
+
+    public function testCanKeepTheOriginalCase(): void
+    {
+        $inferrer = new UrlInferrer('app\\api\\controller', '', false, UrlInferrer::CASE_KEEP);
+
+        self::assertSame('/api/UserOrder/getList', $inferrer->infer('app\\api\\controller\\UserOrder', 'getList'));
+    }
+
+    public function testAnUnknownCaseFallsBackToLower(): void
+    {
+        $inferrer = new UrlInferrer('app\\api\\controller', '', false, 'SNAKE_ISH');
+
+        self::assertSame('/api/userorder/getlist', $inferrer->infer('app\\api\\controller\\UserOrder', 'getList'));
+        self::assertSame(UrlInferrer::CASE_LOWER, $inferrer->segmentCase());
+    }
+
+    public function testExposesTheConfiguredConventions(): void
+    {
+        $default = new UrlInferrer('app\\api\\controller');
+
+        self::assertFalse($default->stripsControllerSuffix());
+        self::assertSame(UrlInferrer::CASE_LOWER, $default->segmentCase());
+
+        $custom = new UrlInferrer('app\\api\\controller', '', true, UrlInferrer::CASE_KEBAB);
+
+        self::assertTrue($custom->stripsControllerSuffix());
+        self::assertSame(UrlInferrer::CASE_KEBAB, $custom->segmentCase());
     }
 
     public function testNestedNamespaceSegmentsBecomePathSegments(): void
@@ -64,7 +124,10 @@ final class UrlInferrerTest extends TestCase
         $inferrer = new UrlInferrer('App\\Http\\Controllers', '/api');
 
         self::assertTrue($inferrer->isUsable());
-        self::assertSame('/api/user/index', $inferrer->infer('App\\Http\\Controllers\\UserController', 'index'));
+        self::assertSame(
+            '/api/usercontroller/index',
+            $inferrer->infer('App\\Http\\Controllers\\UserController', 'index')
+        );
     }
 
     public function testAnEmptyActionProducesTheControllerPath(): void

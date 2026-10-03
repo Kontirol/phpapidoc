@@ -22,8 +22,12 @@ use Traversable;
  * Everything else is walked recursively. Passing a provider skips the
  * bootstrapping step and feeds a raw rule list in, which is how the tests
  * exercise the normalisation.
+ *
+ * The bootstrapped application is also asked how it spells URLs (see
+ * FrameworkConventionsInterface), because a controller class name alone does not
+ * tell whether it is reached at "/api/order" or "/api/ordercontroller".
  */
-final class ThinkPhpRouteSource implements RouteSourceInterface
+final class ThinkPhpRouteSource implements RouteSourceInterface, FrameworkConventionsInterface
 {
     /**
      * Guard against a pathological rule tree.
@@ -46,6 +50,18 @@ final class ThinkPhpRouteSource implements RouteSourceInterface
     private $provider;
 
     /**
+     * Raw rule list, cached so the application is only bootstrapped once.
+     *
+     * @var array<mixed>|null
+     */
+    private $raw;
+
+    /**
+     * @var array{controllerSuffix: ?bool, urlCase: ?string}
+     */
+    private $conventions = ['controllerSuffix' => null, 'urlCase' => null];
+
+    /**
      * @param string|null   $bootstrap Path to the application's vendor/autoload.php.
      * @param callable|null $provider  Returns the raw rule list.
      */
@@ -65,16 +81,39 @@ final class ThinkPhpRouteSource implements RouteSourceInterface
      */
     public function routes(): array
     {
-        $raw = $this->provider === null
-            ? $this->loadFromApplication()
-            : ($this->provider)();
-
         /** @var list<RouteDefinition> $definitions */
         $definitions = [];
 
-        $this->collect($raw, $definitions, 0);
+        $this->collect($this->rawRules(), $definitions, 0);
 
         return $definitions;
+    }
+
+    public function urlConventions(): array
+    {
+        $this->rawRules();
+
+        return $this->conventions;
+    }
+
+    /**
+     * The rule list, bootstrapping the application on first use.
+     *
+     * @return array<mixed>
+     */
+    private function rawRules(): array
+    {
+        if ($this->raw !== null) {
+            return $this->raw;
+        }
+
+        if ($this->provider !== null) {
+            $rules = call_user_func($this->provider);
+
+            return $this->raw = is_array($rules) ? $rules : [];
+        }
+
+        return $this->raw = $this->loadFromApplication();
     }
 
     /**
@@ -104,6 +143,10 @@ final class ThinkPhpRouteSource implements RouteSourceInterface
             );
         }
 
+        // Read the conventions before touching the route manager: knowing how
+        // URLs are spelled is useful even when the rule list cannot be read.
+        $this->conventions = self::readConventions($application);
+
         $route = $this->routeManager($application);
 
         $rules = call_user_func([$route, 'getRuleList']);
@@ -132,6 +175,71 @@ final class ThinkPhpRouteSource implements RouteSourceInterface
         }
 
         return $route;
+    }
+
+    /**
+     * Asks the bootstrapped application how it spells URLs.
+     *
+     * Both lookups are best effort: a configuration key that is missing, or a
+     * container that refuses to answer, simply yields null and the caller falls
+     * back to its own settings.
+     *
+     * @param object $application
+     *
+     * @return array{controllerSuffix: ?bool, urlCase: ?string}
+     */
+    private static function readConventions(object $application): array
+    {
+        $config = null;
+
+        try {
+            if (method_exists($application, '__get')) {
+                $config = $application->__get('config');
+            }
+        } catch (Throwable $exception) {
+            $config = null;
+        }
+
+        if (!is_object($config) || !method_exists($config, 'get')) {
+            return ['controllerSuffix' => null, 'urlCase' => null];
+        }
+
+        return [
+            'controllerSuffix' => self::readBool($config, 'route.controller_suffix'),
+            'urlCase' => self::readUrlCase($config),
+        ];
+    }
+
+    /**
+     * @param object $config
+     */
+    private static function readBool(object $config, string $key): ?bool
+    {
+        try {
+            $value = $config->get($key, null);
+        } catch (Throwable $exception) {
+            return null;
+        }
+
+        return is_bool($value) ? $value : null;
+    }
+
+    /**
+     * app.url_convert decides whether the router lowercases the request path.
+     * ThinkPHP enables it by default, so a missing key stays unknown rather than
+     * being guessed at.
+     *
+     * @param object $config
+     */
+    private static function readUrlCase(object $config): ?string
+    {
+        $convert = self::readBool($config, 'app.url_convert');
+
+        if ($convert === null) {
+            return null;
+        }
+
+        return $convert ? UrlInferrer::CASE_LOWER : UrlInferrer::CASE_KEEP;
     }
 
     /**

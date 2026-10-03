@@ -15,11 +15,13 @@ use Kontirol\ApiDoc\Output\DocumentWriter;
 use Kontirol\ApiDoc\Parser\EndpointBuilder;
 use Kontirol\ApiDoc\Parser\SourceScanner;
 use Kontirol\ApiDoc\Reflector\ReflectionEnricher;
+use Kontirol\ApiDoc\Route\FrameworkConventionsInterface;
 use Kontirol\ApiDoc\Route\RouteDefinition;
 use Kontirol\ApiDoc\Route\RouteMatcher;
 use Kontirol\ApiDoc\Route\RouteSourceInterface;
 use Kontirol\ApiDoc\Route\UrlInferrer;
 use Kontirol\ApiDoc\Scanner\ControllerScanner;
+use Throwable;
 
 /**
  * Wires the whole pipeline together: scan, parse, enrich, render, write.
@@ -75,8 +77,12 @@ final class Application
         $sourceScanner = new SourceScanner();
         $scanner = new ControllerScanner($this->config->excludePatterns());
 
+        // Resolved once: the answer cannot change between controller sources,
+        // and asking for it may bootstrap the framework.
+        $conventions = $this->urlConventions();
+
         foreach ($this->config->controllers() as $source) {
-            $inferrer = $this->urlInferrer($source);
+            $inferrer = $this->urlInferrer($source, $conventions);
 
             foreach ($scanner->scan([$source]) as $file) {
                 $this->collectFile($file->path, $document, $builder, $enricher, $sourceScanner, $inferrer);
@@ -171,8 +177,9 @@ final class Application
 
     /**
      * @param array{path: string, namespace: ?string, prefix: string, exclude: list<string>, suffix: string} $source
+     * @param array{controllerSuffix: bool, case: string}                                                   $conventions
      */
-    private function urlInferrer(array $source): ?UrlInferrer
+    private function urlInferrer(array $source, array $conventions): ?UrlInferrer
     {
         if (!$this->config->inferRoutes()) {
             return null;
@@ -180,10 +187,91 @@ final class Application
 
         $inferrer = new UrlInferrer(
             is_string($source['namespace'] ?? null) ? $source['namespace'] : '',
-            is_string($source['prefix'] ?? null) ? $source['prefix'] : ''
+            is_string($source['prefix'] ?? null) ? $source['prefix'] : '',
+            $conventions['controllerSuffix'],
+            $conventions['case']
         );
 
         return $inferrer->isUsable() ? $inferrer : null;
+    }
+
+    /**
+     * The URL conventions paths are inferred with.
+     *
+     * "auto" (the default for both settings) asks the first route source that
+     * can answer, which is how a ThinkPHP application configured with
+     * controller_suffix = false ends up documented at "/api/ordercontroller"
+     * instead of the "/api/order" that stripping the suffix would produce.
+     *
+     * @return array{controllerSuffix: bool, case: string}
+     */
+    private function urlConventions(): array
+    {
+        $suffix = $this->config->controllerSuffix();
+        $case = $this->config->urlCase();
+
+        if ($suffix === Config::URL_CONVENTION_AUTO || $case === Config::URL_CONVENTION_AUTO) {
+            $detected = $this->detectConventions();
+
+            if ($suffix === Config::URL_CONVENTION_AUTO) {
+                $suffix = $detected['controllerSuffix'];
+            }
+
+            if ($case === Config::URL_CONVENTION_AUTO) {
+                $case = $detected['urlCase'];
+            }
+        }
+
+        return [
+            'controllerSuffix' => is_bool($suffix) ? $suffix : false,
+            'case' => is_string($case) && $case !== Config::URL_CONVENTION_AUTO
+                ? $case
+                : Config::CASE_LOWER,
+        ];
+    }
+
+    /**
+     * Asks the framework route sources what conventions they observed.
+     *
+     * Sources that cannot answer, or that are not framework aware at all, are
+     * skipped. Nothing here is allowed to break the run: failing to bootstrap
+     * the framework only means the configured values are used as they are.
+     *
+     * @return array{controllerSuffix: ?bool, urlCase: ?string}
+     */
+    private function detectConventions(): array
+    {
+        $suffix = null;
+        $case = null;
+
+        foreach ($this->routeSources as $routeSource) {
+            if (!$routeSource instanceof FrameworkConventionsInterface) {
+                continue;
+            }
+
+            try {
+                $conventions = $routeSource->urlConventions();
+            } catch (Throwable $exception) {
+                continue;
+            }
+
+            $detectedSuffix = $conventions['controllerSuffix'] ?? null;
+            $detectedCase = $conventions['urlCase'] ?? null;
+
+            if ($suffix === null && is_bool($detectedSuffix)) {
+                $suffix = $detectedSuffix;
+            }
+
+            if ($case === null && is_string($detectedCase)) {
+                $case = $detectedCase;
+            }
+
+            if ($suffix !== null && $case !== null) {
+                break;
+            }
+        }
+
+        return ['controllerSuffix' => $suffix, 'urlCase' => $case];
     }
 
     /**

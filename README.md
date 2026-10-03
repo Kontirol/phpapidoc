@@ -7,7 +7,7 @@
 ```
 $ vendor/bin/apidoc generate
 
-apidoc 0.1.0
+apidoc 0.1.2
 8 endpoint(s) documented, 1 ignored, in 10 ms.
 Written:
   build/openapi.json  (27.4 KB)
@@ -171,22 +171,42 @@ JSON 里的结构会**自动反推成 JSON Schema**，包括嵌套对象和数�
 `@route` 是最可靠的方式，写什么就是什么。但如果你不想为每个方法都手写一遍，apidoc 也能按 **ThinkPHP 的 pathinfo 约定**推：
 
 ```
-app/api/controller/Translate.php::text()
+app/api/controller/OrderController.php::myorders()
     namespace app\api\controller   ->  /api
-    类名 Translate                 ->  translate
-    方法 text                      ->  text
+    类名 OrderController            ->  ordercontroller
+    方法 myorders                   ->  myorders
                     ↓
-            /api/translate/text
+            /api/ordercontroller/myorders
 ```
 
 规则：
 
 - 前缀优先取配置里 `controllers[].prefix`；没配就看命名空间 —— `app\{应用}\controller` → `/{应用}`，`app\controller` → 根
+- **类名原样保留**（只转小写）：ThinkPHP 的 `route.controller_suffix` 出厂值是 `false`，所以 `OrderController` 对应 `/ordercontroller`，而不是剥掉后缀的 `/order`
+- **不做驼峰转下划线**：`orderDetail()` 对应 `/orderdetail`，不是 `/order_detail`；`VerifyCode` 对应 `/verifycode`，不是 `/verify_code`
 - 命名空间不符合这两个约定时**完全不推导**，不会给别的框架瞎编 URL
 - 推导出来的值伴随一条 `route.inferred` notice，方便区分哪些是猜的
 - 写了 `@route` 的永远以你写的为准，推导不会覆盖它
 
-不想要这个行为就加 `--no-infer`，或者在配置里写 `'route' => ['infer' => false]`。
+### 这两条规则是从哪知道的
+
+`route.source = thinkphp` 时，apidoc 会向启动起来的应用问一次：
+
+```php
+$app->config->get('route.controller_suffix');   // false，出厂值
+$app->config->get('app.url_convert');           // true，URL 转小写
+```
+
+所以通常不用配。**只有项目不走 ThinkPHP 的约定时**（自己写了路由、用 kebab-case 之类）才需要手动指定：
+
+```php
+'url' => [
+    'controller_suffix' => true,    // auto（默认）| true | false
+    'case' => 'kebab',              // auto（默认）| lower | snake | kebab | keep
+],
+```
+
+不想要推导就加 `--no-infer`，或者在配置里写 `'route' => ['infer' => false]`。
 
 ## 零注释起步
 
@@ -294,10 +314,23 @@ return [
     'include_undocumented' => false,   // 等同 --all
 
     'route' => [
-        // annotation（默认，只信 @route）/ thinkphp / auto
+        // annotation（只信 @route）/ thinkphp / auto（默认）
         'source' => 'annotation',
         // 没有写 @route 时，是否按 ThinkPHP 约定从命名空间推导
         'infer' => true,
+        // 引导 ThinkPHP 应用时用哪个 autoload（相对配置文件所在目录）
+        'thinkphp' => [
+            'bootstrap' => 'vendor/autoload.php',
+        ],
+    ],
+
+    // 推导 URL 时用的约定
+    'url' => [
+        // 类名里的 Controller 要不要剥掉
+        // auto（默认）= 问应用；ThinkPHP 出厂值是 false，也就是不剥
+        'controller_suffix' => 'auto',
+        // 分段大小写：auto（默认）| lower（ThinkPHP 的做法）| snake | kebab | keep
+        'case' => 'auto',
     ],
 ];
 ```
@@ -319,6 +352,8 @@ EndpointBuilder     把标签变成 ApiEndpoint（参数、请求体、响应、
       ↓
 ReflectionEnricher  可选：用 PHP 反射补齐方法签名里的参数
       ↓
+UrlInferrer         可选：按命名空间约定推导缺失的 @route
+      ↓
 RouteMatcher        可选：用框架路由表校验并补全 @route
       ↓
 OpenApiBuilder      渲染成 OpenAPI 3.0 数组（顺手从 JSON 示例推 schema）
@@ -329,6 +364,7 @@ DocumentWriter      写 JSON / YAML
 整体的设计原则是 **能少猜就少猜**：
 
 - 反射只做补全，不做反向校验 —— 因为 PHP 框架里大量参数是从 `Request::get()` 拿的，签名里根本没有，按签名校验会满屏误报。
+- 推导 URL 时，约定如果问不到框架就退回 ThinkPHP 的出厂值，绝不凭空发明。
 - 路由表（如果配了）是**运行时真相**，如果和 `@route` 冲突，以路由表为准，但会给你一条 warning。
 - 所有能修的问题都变成诊断信息（error / warning / notice），而不是直接崩掉。
 
@@ -346,7 +382,7 @@ apidoc 不依赖任何框架，ThinkPHP 项目用起来和普通 PHP 项目没�
 
 **2. URL 从哪来。** 看你的项目是哪种写法：
 
-- **pathinfo 自动路由**（多应用模式的默认做法，不写 `route/*.php`）—— 这种项目 ThinkPHP 的路由表里**没有业务路由**（只有内置的 `/<MISS>`），所以 `@route` 得自己写。
+- **pathinfo 自动路由**（多应用模式的默认做法，不写 `route/*.php`）—— ThinkPHP 的路由表里没有业务路由（只有内置的 `<MISS>`），apidoc 按命名空间和类名推导，并按应用自身的 `route.controller_suffix` 得到正确路径。不确定推成了什么，加 `-v` 看 `route.inferred` notice，每条都会带上推导结果。
 - **注册式路由**（写了 `Route::get('user/detail', 'User/detail')`）—— 可以配 `route.source = thinkphp`，apidoc 会引导你的应用、读出真实路由表，与 `@route` 交叉校验，不一致时**以真实路由为准**并给出 warning；`@route` 没写但路由表里有，还会自动填上。
 
 细节和排查工具见 [docs/thinkphp.md](docs/thinkphp.md)。
