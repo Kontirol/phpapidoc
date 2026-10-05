@@ -108,7 +108,10 @@ final class SourceScanner
             }
 
             if ($id === T_FUNCTION) {
-                $name = $this->nextString($tokens, $index);
+                // Method names may be semi reserved words ("list", "print",
+                // "default", ...), which the tokenizer reports as their own
+                // token instead of T_STRING.
+                $name = $this->nextString($tokens, $index, true);
 
                 if ($name !== null && $current !== null) {
                     $method = new ParsedMethod($name, $token[2]);
@@ -190,9 +193,18 @@ final class SourceScanner
     /**
      * Reads the identifier right after a "class" or "function" keyword.
      *
+     * The two positions differ in what PHP allows. Class names cannot be
+     * keywords, so they stay strict. Method names may be one of the semi
+     * reserved words documented in the PHP manual ("list", "print", "default",
+     * "include", ...) and the tokenizer hands those out as a dedicated token:
+     * "function list()" produces T_LIST, not T_STRING. Accepting only T_STRING
+     * made such methods vanish without a single diagnostic, so the function
+     * position takes any token that reads as an identifier.
+     *
      * @param list<array{0: int, 1: string, 2: int}|string> $tokens
+     * @param bool                                          $allowKeywords Accept semi reserved words.
      */
-    private function nextString(array $tokens, int $index): ?string
+    private function nextString(array $tokens, int $index, bool $allowKeywords = false): ?string
     {
         $count = count($tokens);
 
@@ -201,6 +213,7 @@ final class SourceScanner
 
             if (is_string($token)) {
                 if ($token === '&') {
+                    // "function &reference()", on PHP 8.0 and older.
                     continue;
                 }
 
@@ -213,14 +226,37 @@ final class SourceScanner
                 return $text;
             }
 
-            if ($id === T_WHITESPACE || $id === T_COMMENT || $id === T_NS_SEPARATOR) {
+            if ($id === T_WHITESPACE || $id === T_COMMENT || $id === T_DOC_COMMENT || $id === T_NS_SEPARATOR) {
                 continue;
+            }
+
+            // PHP 8.1 turned "&" into T_AMPERSAND_FOLLOWED_BY_VAR_OR_VARARG and
+            // T_AMPERSAND_NOT_FOLLOWED_BY_VAR_OR_VARARG, so the string check
+            // above no longer catches "function &list()".
+            if ($text === '&') {
+                continue;
+            }
+
+            if ($allowKeywords && self::looksLikeIdentifier($text)) {
+                return $text;
             }
 
             return null;
         }
 
         return null;
+    }
+
+    /**
+     * Whether a token's text reads as a PHP identifier.
+     *
+     * Numbers, variables, string literals and operators are all rejected by the
+     * leading character class, so only keyword tokens ("list", "default", ...)
+     * reach the caller. Keywords are always plain ASCII, hence the narrow range.
+     */
+    private static function looksLikeIdentifier(string $text): bool
+    {
+        return preg_match('#^[a-zA-Z_][a-zA-Z0-9_]*$#', $text) === 1;
     }
 
     /**

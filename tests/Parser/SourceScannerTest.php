@@ -38,9 +38,7 @@ final class SourceScannerTest extends TestCase
 
         self::assertSame(
             ['index', 'detail', 'create', 'internal', 'notDocumented'],
-            array_map(static function ($method): string {
-                return $method->name;
-            }, $class->methods)
+            self::methodNames($class->methods)
         );
 
         $index = $class->methods[0];
@@ -187,9 +185,118 @@ CODE;
         self::assertSame('b', $classes[1]->methods[0]->name);
     }
 
+    /**
+     * Method names may legally be one of PHP's semi reserved words. The
+     * tokenizer reports those as their own token (T_LIST, T_PRINT, ...) rather
+     * than T_STRING, and refusing them used to drop the whole method without a
+     * word of warning.
+     */
+    public function testSemiReservedWordMethodNamesAreRecognised(): void
+    {
+        $code = <<<'CODE'
+<?php
+namespace App;
+
+class Health
+{
+    /** @name 列表 */
+    public function list(): void {}
+
+    /** @name 打印 */
+    public function print(): void {}
+
+    /** @name 默认项 */
+    public function default(): void {}
+
+    /** @name 引入 */
+    public function include(): void {}
+
+    /** @name 空判断 */
+    public function empty(): void {}
+
+    /** @name 克隆 */
+    public function clone(): void {}
+}
+CODE;
+
+        $class = $this->scanner->scan($code)[0];
+
+        self::assertSame(
+            ['list', 'print', 'default', 'include', 'empty', 'clone'],
+            self::methodNames($class->methods)
+        );
+
+        // The docblock still has to land on the right method.
+        self::assertStringContainsString('@name 列表', (string) $class->methods[0]->docBlock);
+        self::assertStringContainsString('@name 克隆', (string) $class->methods[5]->docBlock);
+    }
+
+    public function testSemiReservedWordMethodNamesKeepTheirModifiers(): void
+    {
+        $code = <<<'CODE'
+<?php
+
+class Foo
+{
+    public static function list(): void {}
+
+    protected function print(): void {}
+
+    private function unset(): void {}
+}
+CODE;
+
+        $methods = $this->scanner->scan($code)[0]->methods;
+
+        self::assertSame(['list', 'print', 'unset'], self::methodNames($methods));
+        self::assertSame('public', $methods[0]->visibility);
+        self::assertTrue($methods[0]->isStatic);
+        self::assertSame('protected', $methods[1]->visibility);
+        self::assertSame('private', $methods[2]->visibility);
+    }
+
+    public function testReferenceReturningSemiReservedMethodIsRecognised(): void
+    {
+        $code = <<<'CODE'
+<?php
+
+class Foo
+{
+    /** @name 引用返回 */
+    public function &list(): array
+    {
+        $x = [];
+
+        return $x;
+    }
+}
+CODE;
+
+        $methods = $this->scanner->scan($code)[0]->methods;
+
+        self::assertSame(['list'], self::methodNames($methods));
+        self::assertStringContainsString('@name 引用返回', (string) $methods[0]->docBlock);
+    }
+
     public function testHandlesCodeWithoutClasses(): void
     {
         self::assertSame([], $this->scanner->scan('<?php echo 1;'));
+    }
+
+    /**
+     * @param list<\Kontirol\ApiDoc\Parser\ParsedMethod> $methods
+     *
+     * @return list<string>
+     */
+    private static function methodNames(array $methods): array
+    {
+        $names = [];
+
+        foreach ($methods as $method) {
+            $names[] = $method->name;
+        }
+
+        return $names;
     }
 
     /**

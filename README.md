@@ -7,7 +7,7 @@
 ```
 $ vendor/bin/apidoc generate
 
-apidoc 0.1.2
+apidoc 0.1.3
 8 endpoint(s) documented, 1 ignored, in 10 ms.
 Written:
   build/openapi.json  (27.4 KB)

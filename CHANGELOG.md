@@ -4,6 +4,18 @@
 
 ## [未发布]
 
+## [0.1.3] - 2026-10-03
+
+### 修复
+
+- **方法名是 PHP 半保留字时，整个方法会被静默丢掉**：`public function list()` 之前扫不到 —— 不报错、不警告、连 notice 都没有，接口就这么从文档里消失了。原因是 PHP 的词法器不把 `list` 当普通标识符（它是 `T_LIST`），而 `SourceScanner` 读方法名时只认 `T_STRING`，读不到就当作「这个 function 没有名字」直接跳过。现在方法名位置接受任何符合标识符形态的 token，类名位置仍然严格（PHP 不允许 `class list`）
+- 同样受影响的还有 `print`、`default`、`include`、`require`、`unset`、`isset`、`empty`、`clone`、`case`、`for`、`while`、`return`、`new`、`use`、`match`、`array`、`callable` 等共 62 个名字，全部来自 PHP 手册「semi reserved words」那一节
+- `public function &list()` 这种引用返回的写法也一并修好：PHP 8.1 把 `&` 拆成了 `T_AMPERSAND_*`，旧的字符串判断匹配不到，会当成非法 token 放弃
+
+### 变更
+
+- 测试：248 → 251
+
 ## [0.1.2] - 2026-10-03
 
 第二个补丁版本，来自同一个真实项目（ThinkPHP 8 挂号系统，16 个接口）的复核。
@@ -67,7 +79,8 @@
 - 完整的文档：`README.md`、注解速查、[诊断码参考](docs/diagnostics.md)
 - PHPStan level max 零错误，194 个测试 / 469 个断言
 
-[未发布]: https://github.com/kontirol/apidoc/compare/v0.1.2...HEAD
+[未发布]: https://github.com/kontirol/apidoc/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/kontirol/apidoc/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/kontirol/apidoc/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/kontirol/apidoc/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/kontirol/apidoc/releases/tag/v0.1.0
